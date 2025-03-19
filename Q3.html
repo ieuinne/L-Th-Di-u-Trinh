@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        text {
+            font-family: Arial, sans-serif;
+        }
+        .tooltip {
+            position: absolute;
+            text-align: left;
+            padding: 8px;
+            font-size: 12px;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            pointer-events: none;
+            opacity: 0;
+        }
+    </style>
+</head>
+<body>
+    <svg id="chart" width="1000" height="500"></svg>
+    <div class="tooltip"></div>
+    <script>
+        d3.csv("data_ggsheet - data.csv").then(data => {
+            console.log("Dữ liệu đọc từ CSV:", data);
+
+            data.forEach(d => {
+                d["Thời gian tạo đơn"] = new Date(d["Thời gian tạo đơn"]);
+                d.Tháng = `Tháng ${String(d["Thời gian tạo đơn"].getMonth() + 1).padStart(2, '0')}`;
+            });
+
+            const aggregatedData = d3.rollup(
+                data,
+                v => ({
+                    TongThanhTien: d3.sum(v, d => +d["Thành tiền"]),
+                    SoLuong: d3.sum(v, d => +d["SL"])
+                }),
+                d => d.Tháng
+            );
+
+            const processedData = Array.from(aggregatedData, ([Tháng, values]) => ({
+                Tháng,
+                TongThanhTien: values.TongThanhTien,
+                SoLuong: values.SoLuong
+            })).sort((a, b) => a.Tháng.localeCompare(b.Tháng));
+
+            const width = 1100, height = 600;
+            const margin = { top: 40, right: 50, bottom: 50, left: 100 };
+
+            const svg = d3.select("#chart")
+                .attr("width", width)
+                .attr("height", height);
+
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", margin.top / 2)
+                .attr("text-anchor", "middle")
+                .style("font-size", "18px")
+                .style("font-weight", "bold")
+                .text("Doanh số bán hàng theo Tháng");
+
+            const maxValue = d3.max(processedData, d => d.TongThanhTien) / 1e6;
+            const tickStep = Math.ceil(maxValue / 100) * 100;
+            const y = d3.scaleLinear()
+                .domain([0, tickStep])
+                .range([height - margin.bottom, margin.top]);
+
+            const x = d3.scaleBand()
+                .domain(processedData.map(d => d.Tháng))
+                .range([margin.left, width - margin.right])
+                .padding(0.3);
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height - margin.bottom})`)
+                .call(d3.axisBottom(x));
+
+            svg.append("g")
+                .attr("transform", `translate(${margin.left},0)`)
+                .call(d3.axisLeft(y).ticks(tickStep / 100).tickFormat(d => `${d}M`));
+
+            const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+            const tooltip = d3.select(".tooltip");
+
+            svg.selectAll(".bar")
+                .data(processedData)
+                .enter().append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d.Tháng))
+                .attr("y", d => y(d.TongThanhTien / 1e6))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - margin.bottom - y(d.TongThanhTien / 1e6))
+                .attr("fill", (d, i) => colorScale(i))
+                .on("mouseover", function(event, d) {
+                    tooltip.style("opacity", 1)
+                        .html(`<b>Tháng:</b> ${d.Tháng}<br>
+                               <b>Doanh số bán:</b> ${Math.round(d.TongThanhTien / 1e6)} triệu VND<br>
+                               <b>Số lượng:</b> ${d.SoLuong.toLocaleString()} SKUs`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 30) + "px");
+                    d3.select(this).attr("opacity", 0.7);
+                })
+                .on("mousemove", function(event) {
+                    tooltip.style("left", (event.pageX + 10) + "px")
+                           .style("top", (event.pageY - 30) + "px");
+                })
+                .on("mouseout", function() {
+                    tooltip.style("opacity", 0);
+                    d3.select(this).attr("opacity", 1);
+                });
+                svg.selectAll(".label")
+                    .data(processedData)
+                    .enter().append("text")
+                    .attr("x", d => x(d.Tháng) + x.bandwidth() / 2) // Canh giữa cột
+                    .attr("y", d => y(d.TongThanhTien / 1e6) - 5) // Đặt phía trên cột một chút
+                    .attr("text-anchor", "middle")
+                    .style("font-size", "9px")
+                    .style("fill", "black")
+                    .text(d => `${Math.round(d.TongThanhTien / 1e6)} triệu VNĐ`);
+
+        }).catch(error => {
+            console.error("Lỗi khi tải file CSV:", error);
+        });
+    </script>
+</body>
+</html>
